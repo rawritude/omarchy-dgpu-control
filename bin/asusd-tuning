@@ -197,6 +197,35 @@ def rewrite(lines, section, profile, enabled, values):
     return out
 
 
+def repair_shutdown_unit():
+    """Put asus-shutdown back after an asusd restart knocked it over.
+
+    asus-shutdown is PartOf=asusd.service, so restarting asusd stops it too —
+    but it defers SIGTERM ("until deferred shutdown apply reaches a safe
+    completion point") and its unit sets SendSIGKILL=no, so systemd waits out
+    both timeouts and gives up with the process still alive. The unit lands in
+    `failed` with an orphan holding the name, which then refuses to start again.
+
+    Left alone this accumulates a failed unit on every gate change, on the one
+    service that runs at shutdown.
+    """
+    def sc(*args):
+        return subprocess.run(["systemctl", *args], capture_output=True, text=True)
+
+    if sc("is-failed", "--quiet", "asus-shutdown.service").returncode != 0:
+        if sc("is-active", "--quiet", "asus-shutdown.service").returncode == 0:
+            return
+    sc("reset-failed", "asus-shutdown.service")
+    if sc("start", "asus-shutdown.service").returncode == 0:
+        return
+    # Still refusing: the deferred process is holding the name. systemctl kill
+    # targets the unit's cgroup, so no pid is guessed at.
+    sc("kill", "-s", "KILL", "asus-shutdown.service")
+    time.sleep(2)
+    sc("reset-failed", "asus-shutdown.service")
+    sc("start", "asus-shutdown.service")
+
+
 def apply(enabled):
     if os.geteuid() != 0:
         raise SystemExit("must run as root (use pkexec)")
@@ -247,6 +276,8 @@ def apply(enabled):
     # source, so the restart above silently moves you off the profile you were
     # editing — enable while on Balanced and you land on Performance, having
     # opened a gate for a profile you are no longer using. Put it back.
+    repair_shutdown_unit()
+
     # Settle first. Checking immediately races asusd: the profile still reads
     # as the old one for a moment after the socket is up, so an early compare
     # sees no change and skips the restore that is about to become necessary.
