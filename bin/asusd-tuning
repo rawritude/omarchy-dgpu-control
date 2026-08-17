@@ -31,7 +31,18 @@ import subprocess
 import sys
 import time
 
-CONF = os.environ.get("ASUSD_CONF", "/etc/asusd/asusd.ron")
+DEFAULT_CONF = "/etc/asusd/asusd.ron"
+
+# The env override is honoured only when NOT running as root.
+#
+# `enable`/`disable` copy this path and write to it as root. Taking that path
+# from the environment while privileged is an arbitrary file write waiting for
+# a caller that does not sanitise: pkexec happens to strip unknown variables
+# today, so the override never survives, but the safety would then belong to
+# pkexec rather than to this script — and anyone who wired it up through sudo
+# instead would inherit a root-write primitive. Unprivileged `status` may still
+# point at another file, which is useful for inspecting a copy.
+CONF = DEFAULT_CONF if os.geteuid() == 0 else os.environ.get("ASUSD_CONF", DEFAULT_CONF)
 
 # The attributes worth carrying in a tuning group. Restricted deliberately:
 # asus-armoury also exposes non-power attributes (boot_sound, panel_overdrive,

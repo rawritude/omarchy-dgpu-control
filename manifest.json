@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.rawritude.dgpu-control",
   "name": "dGPU Control",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "rawritude",
   "license": "MIT",
   "description": "Control the discrete GPU on a dual-GPU machine: block it entirely, allow it per-application, or leave it to park itself — and see exactly which processes are keeping it awake. Reads never wake the card. Optional ASUS ROG/TUF power profile and firmware limits when asusd is present. Requires the cardwire daemon and Wayland.",
