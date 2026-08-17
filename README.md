@@ -94,9 +94,14 @@ sudo rm -rf /etc/cardwire /var/lib/cardwire   # not owned by the package
 
 ## Usage
 
-**Bar:** the icon shows the discrete GPU's state — its PCI D-state when awake, `off` when
-blocked, `auto` in Smart mode. It highlights when the card is out of a low-power state, which is
-the "something woke my dGPU" signal. Click to open the panel.
+**Bar:** the icon shows the discrete GPU's state in one word — `on` when the card is awake, `off`
+when blocked, `auto` when it is parked in Smart mode, and nothing at all when it is parked in
+Hybrid. It highlights when the card is out of a low-power state, which is the "something woke my
+dGPU" signal. Click to open the panel; the exact PCI D-state is shown there, beside the card's PCI
+address.
+
+Seeing `on` for the first half-minute after login is normal — the session brings the card up as it
+starts, and it drops back to `D3cold` roughly 20 seconds after the last thing lets go of it.
 
 **Modes:**
 

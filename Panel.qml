@@ -56,11 +56,16 @@ Panel {
     if (root.verticalBar) return g
     if (!cardwire.available) return g
     if (cardwire.discreteOffLimits) return "off " + g
-    // Smart still uses the card, so an awake one must still be visible here;
-    // showing only "auto" hid exactly the state worth noticing.
-    if (cardwire.discreteOnDemand)
-      return (cardwire.discreteAwake ? cardwire.discretePowerState : "auto") + " " + g
-    if (cardwire.discreteAwake) return cardwire.discretePowerState + " " + g
+    // Plain words, deliberately not the raw PCI D-state. D0 is the only state
+    // that can ever reach this branch — discreteAwake is false for every D3
+    // variant — so printing it was jargon carrying no information the colour
+    // did not already carry. The exact D-state stays in the panel, next to the
+    // PCI address, where that level of detail belongs.
+    //
+    // Checked before the mode, because Smart still uses the card: an awake one
+    // must show here rather than being hidden behind "auto".
+    if (cardwire.discreteAwake) return "on " + g
+    if (cardwire.discreteOnDemand) return "auto " + g
     return g
   }
 
@@ -262,7 +267,14 @@ Panel {
               }
 
               Text {
+                // The exact PCI D-state lives here rather than in the bar or
+                // the status column: it is diagnostic detail, and it is the
+                // one place D3cold (fully powered down) can be told apart from
+                // D3hot (still holding context), which is what you want to see
+                // when a card is refusing to park.
                 text: modelData.pci + "  ·  " + modelData.driver
+                    + (modelData.discrete && cardwire.discretePowerState
+                       ? "  ·  " + cardwire.discretePowerState : "")
                 textFormat: Text.PlainText
                 font.family: root.fontFamily
                 font.pixelSize: Style.space(10)
@@ -498,7 +510,9 @@ Panel {
     if (!g) return ""
     if (g.discrete && cardwire.discreteOnDemand) return "on demand"
     if (g.blocked) return "blocked"
-    if (g.discrete) return cardwire.discretePowerState
+    // Words here too, matching the bar. The D-state itself is on the line
+    // below; this column is narrow and a long state string elides the name.
+    if (g.discrete) return cardwire.discreteAwake ? "in use" : "parked"
     if (g["default"]) return "display"
     return "idle"
   }
