@@ -172,11 +172,18 @@ This plugin is a front-end. The hard parts belong to other people:
   `KeyboardPanel`) this plugin is built from. The first-party `power` and `tailscale` panels were
   the working reference for how a bar widget should behave.
 - **[Quickshell](https://git.outfoxxed.me/quickshell/quickshell)** by outfoxxed (LGPL-3.0) — the
-  QML shell framework underneath all of it.
+  QML shell framework Omarchy is built on, and a separate project rather than part of it. This
+  plugin is written directly against its APIs: `Process` and `StdioCollector` for every external
+  call, `SplitParser` for the D-Bus monitor, `IpcHandler` for the keybind surface, and `FileView`,
+  which is the reason attribute reads can come from sysfs natively instead of costing a
+  subprocess per attribute.
 - **[omarchy-asus-master](https://github.com/remydw/omarchy-asus-master)** by remydw (MIT) — the
-  first plugin to drive asusd from Quickshell, and the reference for the asusd D-Bus call shapes
-  and the `QueuedGpuValue` / `ApplyQueuedGpuValue` flow. No code is shared, but the interface
-  knowledge came from reading it.
+  first plugin to drive asusd from Quickshell. No code is shared, and this plugin deliberately
+  does not follow its I/O approach. What it gave us was knowing the `xyz.ljones.*` interface was
+  drivable from a shell plugin at all — and, decisively, its README documents the asusd 6.3.8
+  *"getter/setter signature mismatch — even `asusctl slash --mode` silently no-ops"*. That is the
+  same defect that makes the power limits read-only here, and it turned an inexplicable symptom
+  into a known bug with a known fix version.
 - **[Nerd Fonts](https://www.nerdfonts.com/)** — the glyphs.
 
 ## License
