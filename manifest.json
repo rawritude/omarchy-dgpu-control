@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "gpu",
+  "id": "io.github.rawritude.gpu",
   "name": "GPU",
   "version": "1.0.0",
   "author": "rawritude",

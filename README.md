@@ -68,10 +68,26 @@ busctl --system set-property org.opengamingcollective.cardwire \
 
 ```bash
 omarchy plugin add https://github.com/rawritude/omarchy-gpu.git --enable
-omarchy bar move gpu --section right
+omarchy bar move io.github.rawritude.gpu --section right
 ```
 
 Plugins land disabled unless you pass `--enable`, so you can read the code first.
+
+## Removing it
+
+```bash
+omarchy plugin remove io.github.rawritude.gpu
+```
+
+That takes the widget out of your bar and deletes the plugin. It touches nothing
+else: cardwire and asusd are independent system daemons this plugin only reads and
+commands, so they keep running exactly as before. If you also want cardwire gone:
+
+```bash
+sudo systemctl disable --now cardwired
+sudo pacman -R cardwire
+sudo rm -rf /etc/cardwire /var/lib/cardwire   # not owned by the package
+```
 
 ## Usage
 
@@ -100,10 +116,10 @@ Environment=CARDWIRE_ALLOW=1
 **IPC**, for keybinds:
 
 ```bash
-omarchy-shell gpu toggle
-omarchy-shell gpu integrated
-omarchy-shell gpu hybrid
-omarchy-shell gpu smart
+omarchy-shell io.github.rawritude.gpu toggle
+omarchy-shell io.github.rawritude.gpu integrated
+omarchy-shell io.github.rawritude.gpu hybrid
+omarchy-shell io.github.rawritude.gpu smart
 ```
 
 ## Settings
@@ -114,7 +130,7 @@ omarchy-shell gpu smart
 | `activePollMs` | `3000` | Refresh while the panel is open (the process list has no signal behind it) |
 | `warnWhenAwake` | `true` | Highlight the bar icon when the dGPU is not in a low-power state |
 
-Set with `omarchy bar set gpu <key> <value> --json` (pass `--json` for booleans and numbers,
+Set with `omarchy bar set io.github.rawritude.gpu <key> <value> --json` (pass `--json` for booleans and numbers,
 otherwise they are stored as strings).
 
 ## Notes on the ASUS section
