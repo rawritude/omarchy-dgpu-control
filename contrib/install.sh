@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the tuning helper and its polkit action.
+# Install (or remove) the tuning helper and its polkit action.
 #
 # Only needed for the "Enable tuning" button in the Fine limits section. Reading
 # the gate, switching GPU modes and switching power profiles all work without
@@ -7,6 +7,10 @@
 # the rest to `wheel`.
 #
 #   sudo ./contrib/install.sh
+#   sudo ./contrib/install.sh --uninstall
+#
+# These are the only two files this plugin puts outside its own directory, so
+# --uninstall is what makes `omarchy plugin remove` actually complete.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,6 +18,20 @@ BIN=/usr/local/bin/asusd-tuning
 POLICY=/usr/share/polkit-1/actions/io.github.rawritude.dgpu-control.policy
 
 [ "$(id -u)" -eq 0 ] || { echo "run me as root: sudo $0" >&2; exit 1; }
+
+if [ "${1:-}" = "--uninstall" ]; then
+  rm -f "$BIN" "$POLICY"
+  echo "removed:"
+  echo "  $BIN"
+  echo "  $POLICY"
+  echo
+  # Deliberately NOT reverted: any tuning gate you opened stays open, and the
+  # power envelope asusd is applying stays applied. Closing them here would
+  # change how the machine runs as a side effect of uninstalling a widget.
+  # `asusd-tuning disable` before removing this, if that is what you want.
+  echo "note: tuning gates you opened in /etc/asusd/asusd.ron are left as they are."
+  exit 0
+fi
 
 # The policy pins this exact path; installing the helper anywhere else silently
 # downgrades the prompt to the generic pkexec one.

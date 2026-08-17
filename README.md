@@ -82,9 +82,23 @@ Plugins land disabled unless you pass `--enable`, so you can read the code first
 omarchy plugin remove io.github.rawritude.dgpu-control
 ```
 
-That takes the widget out of your bar and deletes the plugin. It touches nothing
-else: cardwire and asusd are independent system daemons this plugin only reads and
-commands, so they keep running exactly as before. If you also want cardwire gone:
+That takes the widget out of your bar and deletes the plugin. cardwire and asusd are
+independent system daemons this plugin only reads and commands, so they keep running
+exactly as before.
+
+If you installed the optional tuning helper, remove its two files as well — they are
+the only things this plugin puts outside its own directory:
+
+```bash
+sudo ~/.config/omarchy/plugins/io.github.rawritude.dgpu-control/contrib/install.sh --uninstall
+```
+
+That deletes `/usr/local/bin/asusd-tuning` and its polkit action. Any tuning gate you
+opened in `/etc/asusd/asusd.ron` is deliberately left alone: closing it would change
+how the machine runs as a side effect of removing a widget. Run `asusd-tuning disable`
+first if you want it closed.
+
+If you also want cardwire gone:
 
 ```bash
 sudo systemctl disable --now cardwired
