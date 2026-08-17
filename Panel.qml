@@ -11,8 +11,8 @@ import qs.Ui
 // actually holding the card open.
 Panel {
   id: root
-  moduleName: "io.github.rawritude.gpu"
-  ipcTarget: "io.github.rawritude.gpu"
+  moduleName: "io.github.rawritude.dgpu-control"
+  ipcTarget: "io.github.rawritude.dgpu-control"
   manageIpc: false
 
   // Required: without an implicit size the button's `anchors.fill: parent`
@@ -101,7 +101,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "io.github.rawritude.gpu"
+    target: "io.github.rawritude.dgpu-control"
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }

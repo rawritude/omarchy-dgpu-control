@@ -1,21 +1,24 @@
-# GPU — hybrid graphics control for the Omarchy bar
+# dGPU Control — discrete GPU control for the Omarchy bar
 
-Switch your laptop's GPU mode, see the discrete card's **real PCI power state**, and — the
+Control the discrete GPU on a dual-GPU machine, see its **real PCI power state**, and — the
 reason this exists — find out **which processes are keeping it awake**.
 
 On ASUS ROG hardware it also exposes the platform profile and the firmware power envelope.
 
-![The GPU panel](preview.png)
+![The dGPU Control panel](preview.png)
 
 ## Is this for you?
 
-This plugin is for **laptops with switchable hybrid graphics** — an integrated GPU that drives
-the display plus a discrete GPU used for offload. Typically an AMD or Intel iGPU alongside an
-NVIDIA dGPU.
+This plugin is for machines with **two GPUs** — typically a laptop whose integrated GPU drives the
+display alongside a discrete card used for offload. It is **vendor-neutral**: cardwire classifies
+GPUs by generic PCI properties, so an AMD, Intel or NVIDIA discrete card all work.
+
+It is **not** ASUS-specific. The ASUS section is an optional extra that hides itself entirely on
+other hardware.
 
 | Requirement | Why |
 |---|---|
-| **Hybrid GPU laptop** | On a single-GPU machine there is nothing to switch |
+| **Two GPUs** | An integrated GPU plus a discrete one. On a single-GPU machine there is nothing to control |
 | **[cardwire](https://github.com/OpenGamingCollective/cardwire)** daemon | Does the actual GPU management; this is a front-end for it |
 | **Wayland** | cardwire does not support X11 |
 | Kernel with `CONFIG_BPF_LSM` | cardwire blocks GPUs with eBPF LSM hooks |
@@ -67,8 +70,8 @@ busctl --system set-property org.opengamingcollective.cardwire \
 ## Installing the plugin
 
 ```bash
-omarchy plugin add https://github.com/rawritude/omarchy-gpu.git --enable
-omarchy bar move io.github.rawritude.gpu --section right
+omarchy plugin add https://github.com/rawritude/omarchy-dgpu-control.git --enable
+omarchy bar move io.github.rawritude.dgpu-control --section right
 ```
 
 Plugins land disabled unless you pass `--enable`, so you can read the code first.
@@ -76,7 +79,7 @@ Plugins land disabled unless you pass `--enable`, so you can read the code first
 ## Removing it
 
 ```bash
-omarchy plugin remove io.github.rawritude.gpu
+omarchy plugin remove io.github.rawritude.dgpu-control
 ```
 
 That takes the widget out of your bar and deletes the plugin. It touches nothing
@@ -116,10 +119,10 @@ Environment=CARDWIRE_ALLOW=1
 **IPC**, for keybinds:
 
 ```bash
-omarchy-shell io.github.rawritude.gpu toggle
-omarchy-shell io.github.rawritude.gpu integrated
-omarchy-shell io.github.rawritude.gpu hybrid
-omarchy-shell io.github.rawritude.gpu smart
+omarchy-shell io.github.rawritude.dgpu-control toggle
+omarchy-shell io.github.rawritude.dgpu-control integrated
+omarchy-shell io.github.rawritude.dgpu-control hybrid
+omarchy-shell io.github.rawritude.dgpu-control smart
 ```
 
 ## Settings
@@ -130,7 +133,7 @@ omarchy-shell io.github.rawritude.gpu smart
 | `activePollMs` | `3000` | Refresh while the panel is open (the process list has no signal behind it) |
 | `warnWhenAwake` | `true` | Highlight the bar icon when the dGPU is not in a low-power state |
 
-Set with `omarchy bar set io.github.rawritude.gpu <key> <value> --json` (pass `--json` for booleans and numbers,
+Set with `omarchy bar set io.github.rawritude.dgpu-control <key> <value> --json` (pass `--json` for booleans and numbers,
 otherwise they are stored as strings).
 
 ## Notes on the ASUS section

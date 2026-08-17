@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.rawritude.gpu",
-  "name": "GPU",
+  "id": "io.github.rawritude.dgpu-control",
+  "name": "dGPU Control",
   "version": "1.0.0",
   "author": "rawritude",
   "license": "MIT",
-  "description": "Hybrid-GPU control for laptops with a switchable discrete GPU. Switch Integrated/Hybrid/Smart via cardwire, see the dGPU's real PCI power state, and list which processes are holding it awake. On ASUS ROG hardware it also exposes the platform profile and firmware power limits. Requires the cardwire daemon and Wayland; the ASUS section appears only when asusd is present.",
+  "description": "Control the discrete GPU on a dual-GPU machine: block it entirely, allow it per-application, or leave it to park itself \u2014 and see exactly which processes are keeping it awake. Reads never wake the card. Optional ASUS ROG/TUF power profile and firmware limits when asusd is present. Requires the cardwire daemon and Wayland.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,8 +13,8 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "GPU",
-    "description": "Hybrid-GPU mode, discrete power state, and what is keeping the dGPU awake. Needs cardwire; ASUS power controls are optional.",
+    "displayName": "dGPU Control",
+    "description": "Block, allow or park the discrete GPU, see its real power state, and find what is holding it awake.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right",
