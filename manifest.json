@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.rawritude.dgpu-control",
   "name": "dGPU Control",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "rawritude",
   "license": "MIT",
-  "description": "Control the discrete GPU on a dual-GPU machine: block it entirely, allow it per-application, or leave it to park itself \u2014 and see exactly which processes are keeping it awake. Reads never wake the card. Optional ASUS ROG/TUF power profile and firmware limits when asusd is present. Requires the cardwire daemon and Wayland.",
+  "description": "Control the discrete GPU on a dual-GPU machine: block it entirely, allow it per-application, or leave it to park itself — and see exactly which processes are keeping it awake. Reads never wake the card. Optional ASUS ROG/TUF power profile and firmware limits when asusd is present. Requires the cardwire daemon and Wayland.",
   "kinds": [
     "bar-widget"
   ],
@@ -27,7 +27,7 @@
       {
         "key": "fallbackPollMs",
         "type": "integer",
-        "label": "Safety-net refresh while closed (ms) \u2014 updates arrive by D-Bus signal",
+        "label": "Safety-net refresh while closed (ms) — updates arrive by D-Bus signal",
         "min": 30000,
         "max": 3600000,
         "step": 30000,
