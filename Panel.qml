@@ -166,19 +166,32 @@ Panel {
           width: parent.width
           spacing: Style.space(8)
 
-          Row {
+          // Anchored rather than a Row with a hand-computed spacer: the spacer
+          // was `column.width - 120`, which silently assumed the title's width
+          // and would push the refresh button off the right edge the moment the
+          // title grew.
+          Item {
             width: parent.width
-            spacing: Style.space(8)
+            height: Math.max(panelTitle.implicitHeight, refreshButton.height)
+
             Text {
+              id: panelTitle
+              anchors.left: parent.left
               anchors.verticalCenter: parent.verticalCenter
-              text: "GPU"
+              // The plugin's own name, not a bare "GPU". The panel is opened
+              // from a bar that may hold several widgets, and "GPU" said
+              // neither which one this was nor that it controls the discrete
+              // card specifically rather than graphics in general.
+              text: "dGPU Control"
               font.family: root.fontFamily
               font.pixelSize: Style.space(13)
               font.bold: true
               color: Color.foreground
             }
-            Item { width: Math.max(0, column.width - Style.space(120)); height: 1 }
+
             PanelActionButton {
+              id: refreshButton
+              anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               iconText: root.refreshGlyph
               tooltipText: "Refresh"
