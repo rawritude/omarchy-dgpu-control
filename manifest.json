@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "gpu",
+  "name": "GPU",
+  "version": "1.0.0",
+  "author": "rawritude",
+  "license": "MIT",
+  "description": "Hybrid-GPU control for laptops with a switchable discrete GPU. Switch Integrated/Hybrid/Smart via cardwire, see the dGPU's real PCI power state, and list which processes are holding it awake. On ASUS ROG hardware it also exposes the platform profile and firmware power limits. Requires the cardwire daemon and Wayland; the ASUS section appears only when asusd is present.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "GPU",
+    "description": "Hybrid-GPU mode, discrete power state, and what is keeping the dGPU awake. Needs cardwire; ASUS power controls are optional.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "activePollMs": 3000,
+      "warnWhenAwake": true,
+      "fallbackPollMs": 300000
+    },
+    "schema": [
+      {
+        "key": "fallbackPollMs",
+        "type": "integer",
+        "label": "Safety-net refresh while closed (ms) \u2014 updates arrive by D-Bus signal",
+        "min": 30000,
+        "max": 3600000,
+        "step": 30000,
+        "defaultValue": 300000
+      },
+      {
+        "key": "activePollMs",
+        "type": "integer",
+        "label": "Refresh interval while the panel is open (ms)",
+        "min": 500,
+        "max": 30000,
+        "step": 500,
+        "defaultValue": 3000
+      },
+      {
+        "key": "warnWhenAwake",
+        "type": "boolean",
+        "label": "Highlight the icon when the discrete GPU is not in a low-power state",
+        "defaultValue": true
+      }
+    ]
+  }
+}
