@@ -170,7 +170,10 @@ battery, unplug first, then click the padlock.
 Opening the gate rewrites `/etc/asusd/asusd.ron` and restarts asusd, so it needs root. Everything
 else — reading the gate, switching modes, switching profiles — works without it.
 
+`omarchy plugin add` clones into `~/.config/omarchy/plugins/`, so run it from there:
+
 ```sh
+cd ~/.config/omarchy/plugins/io.github.rawritude.dgpu-control
 sudo ./contrib/install.sh
 ```
 
@@ -234,10 +237,10 @@ This plugin is a front-end. The hard parts belong to other people:
 - **[omarchy-asus-master](https://github.com/remydw/omarchy-asus-master)** by remydw (MIT) — the
   first plugin to drive asusd from Quickshell. No code is shared, and this plugin deliberately
   does not follow its I/O approach. What it gave us was knowing the `xyz.ljones.*` interface was
-  drivable from a shell plugin at all — and, decisively, its README documents the asusd 6.3.8
-  *"getter/setter signature mismatch — even `asusctl slash --mode` silently no-ops"*. That is the
-  same defect that makes the power limits read-only here, and it turned an inexplicable symptom
-  into a known bug with a known fix version.
+  drivable from a shell plugin at all, and its README's note that asusd writes can be accepted and
+  silently discarded — which is what sent us looking for a cause rather than assuming the widget
+  was at fault. The cause here turned out to be asusd's per-profile tuning gate rather than the
+  version-specific bug that note describes; the pointer was still what found it.
 - **[Nerd Fonts](https://www.nerdfonts.com/)** — the glyphs.
 
 ## License
