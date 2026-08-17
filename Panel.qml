@@ -51,6 +51,9 @@ Panel {
   // way so the rule has no exceptions to remember.
   readonly property string refreshGlyph: String.fromCodePoint(0xF021)
 
+  // nf-fa-unlock_alt: an open padlock, for opening asusd's tuning gate.
+  readonly property string unlockGlyph: String.fromCodePoint(0xF13E)
+
   readonly property string barLabel: {
     var g = root.gpuGlyph
     if (root.verticalBar) return g
@@ -374,23 +377,60 @@ Panel {
             color: root.dim
           }
 
-          Text {
-            text: "Fine limits"
-            font.family: root.fontFamily
-            font.pixelSize: Style.space(11)
-            font.bold: true
-            color: Color.foreground
+          Item {
+            width: parent.width
+            height: Math.max(limitsTitle.implicitHeight, enableButton.height)
             visible: armoury.available
+
+            Text {
+              id: limitsTitle
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Fine limits"
+              font.family: root.fontFamily
+              font.pixelSize: Style.space(11)
+              font.bold: true
+              color: Color.foreground
+            }
+
+            PanelActionButton {
+              id: enableButton
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              // Offered only when it would actually achieve something: the
+              // helper is what needs root, and there is nothing to open if the
+              // gate for this cell is already open.
+              visible: !armoury.tuningEnabled && armoury.helperPresent
+              enabled: !armoury.enablingTuning
+              opacity: enabled ? 1.0 : 0.5
+              iconText: root.unlockGlyph
+              tooltipText: "Let " + (armoury.prettyProfile || "this profile") + " on "
+                         + (armoury.onAc ? "AC" : "battery") + " carry its own power limits"
+              foreground: root.dim
+              hoverColor: Color.foreground
+              onClicked: armoury.enableTuning()
+            }
           }
 
           Text {
             width: parent.width
             wrapMode: Text.WordWrap
             visible: armoury.available && !armoury.limitsWritable
-            text: "Read-only: this asusd is not applying limit changes. 6.3.8 has an "
-                + "upstream getter/setter bug that makes property writes silently no-op; "
-                + "it needs \u2265 6.4.0. The profile buttons above DO work \u2014 they apply "
-                + "the tuning groups from /etc/asusd/asusd.ron."
+            // The old copy here blamed an upstream asusd 6.3.8 setter bug. That
+            // was wrong: the same write lands or is dropped purely on which
+            // cell of the gate is open, so naming the cell is the whole fix.
+            text: {
+              var where = (armoury.prettyProfile || "this profile") + " on "
+                        + (armoury.onAc ? "AC" : "battery")
+              if (!armoury.tuningEnabled)
+                return "Read-only: asusd is not applying power limits for " + where + ". "
+                     + "It keeps a separate envelope per profile and power source, and this "
+                     + "one is switched off, so writes are accepted and discarded."
+                     + (armoury.helperPresent
+                        ? "" : " Install contrib/install.sh to enable it from here.")
+              return "That last change did not reach the firmware, even though asusd is set "
+                   + "to apply limits for " + where + "."
+            }
             textFormat: Text.PlainText
             font.family: root.fontFamily
             font.pixelSize: Style.space(10)

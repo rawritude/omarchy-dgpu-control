@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import Quickshell.Services.UPower
 
 // ASUS platform profile + firmware power envelope.
 //
@@ -10,9 +11,17 @@ import Quickshell.Io
 //    power-profiles-daemon also drives, and asusd already switches it
 //    automatically — Performance on AC, Quiet on battery.
 //
-//  * The individual power limits are gated behind asusd's per-profile
-//    "tunings", which ship disabled. With them off asusd accepts the write,
-//    updates its own D-Bus property, and never touches the firmware.
+//  * The individual power limits are gated behind asusd's "tunings". With the
+//    gate shut asusd accepts the write, updates its own D-Bus property, and
+//    never touches the firmware.
+//
+//    The gate is per (power source, profile), NOT global: asusd keeps a
+//    separate group for each cell of ac/dc × Quiet/Balanced/Performance and
+//    consults only the one matching the moment. Verified on a GA403WM, where
+//    the identical write landed under AC+Quiet and was dropped under
+//    AC+Performance. A stock config ships every dc_ group disabled, so on
+//    battery nothing is tunable at all — which is where lowering TGP would
+//    actually buy runtime.
 //
 // Everything is READ from sysfs via FileView: native, watchable, no subprocess,
 // and — unlike asusd's D-Bus properties — actually true. Writes go through
@@ -232,24 +241,107 @@ Item {
     }
   }
 
-  // asusd.ron is world-readable, so the gate can be reported before the user
-  // discovers it by dragging a slider that springs back.
-  property bool tuningEnabled: true
-  function checkTuning() { if (!cfgProc.running) cfgProc.running = true }
-  Process {
-    id: cfgProc
-    running: true
-    command: ["sh", "-c", "grep -c 'enabled: true' /etc/asusd/asusd.ron 2>/dev/null || echo 0"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: svc.tuningEnabled = (parseInt(String(text || "0").trim(), 10) || 0) > 0
-    }
+  // ---- the tuning gate --------------------------------------------------
+  //
+  // asusd.ron is world-readable, so the gate is read directly rather than
+  // shelled out for. This replaced `grep -c 'enabled: true' asusd.ron`, which
+  // asked a global question about a per-cell setting: one enabled group
+  // anywhere in the file reported every profile as writable, so the sliders
+  // rendered live on profiles that would silently discard the write.
+  property string configText: ""
+
+  FileView {
+    path: "/etc/asusd/asusd.ron"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: svc.configText = String(text() || "")
+    onLoadFailed: svc.configText = ""
   }
 
+  // asusd forces a profile per power source, so which cell applies changes
+  // under you when you plug in. UPower reports that without a poll.
+  readonly property bool onAc: !UPower.onBattery
+  readonly property string tuningSection: onAc ? "ac_profile_tunings" : "dc_profile_tunings"
+  readonly property string prettyProfile:
+    profile === "" ? "" : profile.charAt(0).toUpperCase() + profile.slice(1)
+
+  // Indentation-keyed, not brace-matched: each profile block holds a nested
+  // `group: { ... }` whose closing brace makes a brace-counting walk leave the
+  // section one line early and read the wrong cell.
+  function gateFor(section, prettyName) {
+    if (configText === "" || prettyName === "") return null
+    var lines = configText.split("\n")
+    var inSec = false, secIndent = -1, inProf = false, profIndent = -1
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], stripped = line.trim()
+      if (stripped === "") continue
+      var indent = line.length - line.replace(/^\s+/, "").length
+
+      if (!inSec) {
+        if (stripped.indexOf(section + ":") === 0) { inSec = true; secIndent = indent }
+        continue
+      }
+      if (!inProf) {
+        if (indent <= secIndent && stripped.charAt(0) !== "(" && stripped.charAt(0) !== "{") {
+          inSec = false; continue          // section ended without this profile
+        }
+        if (stripped.indexOf(prettyName + ":") === 0) { inProf = true; profIndent = indent }
+        continue
+      }
+      if (indent <= profIndent) return null // profile block held no enabled key
+      var m = stripped.match(/^enabled\s*:\s*(true|false)/)
+      if (m) return m[1] === "true"
+    }
+    return null
+  }
+
+  // null means the cell is absent from the config, which asusd treats as off.
+  readonly property bool tuningEnabled: gateFor(tuningSection, prettyProfile) === true
   readonly property bool limitsWritable: tuningEnabled && !writesIgnored
 
-  // Re-read the gate whenever the panel opens: enabling a profile tuning in
-  // asusd.ron is a config edit made outside this process, and a one-shot check
-  // at shell start would keep reporting read-only until the next reload.
-  onDetailWantedChanged: if (detailWanted) checkTuning()
+  // ---- opening the gate -------------------------------------------------
+  //
+  // Needs root, so it goes through a helper rather than being attempted here.
+  // The helper seeds the group from the values the firmware is running right
+  // now, so opening the gate does not itself change the machine — asusd's
+  // shipped Performance group carries a PptPl1Spl well under what the hardware
+  // actually runs at, and applying it verbatim would quietly cost power.
+  property bool helperPresent: false
+  readonly property bool enablingTuning: enableProc.running
+
+  FileView {
+    path: "/usr/local/bin/asusd-tuning"
+    printErrors: false
+    onLoaded: svc.helperPresent = true
+    onLoadFailed: svc.helperPresent = false
+  }
+
+  function enableTuning() {
+    if (enableProc.running || !helperPresent) return
+    lastError = ""
+    enableProc.command = ["pkexec", "/usr/local/bin/asusd-tuning", "enable"]
+    enableProc.running = true
+  }
+
+  Process {
+    id: enableProc
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var t = String(text || "").trim()
+        if (t !== "") svc.lastError = t
+      }
+    }
+    onExited: function(code) {
+      // 126 is polkit's "dismissed or not authorised", which is a choice
+      // rather than a fault and should not be reported as an error.
+      if (code === 126) svc.lastError = ""
+      else if (code !== 0 && svc.lastError === "") svc.lastError = "could not enable tuning"
+      // asusd is restarted by the helper, so a write refused a moment ago may
+      // now land; let the next attempt decide rather than staying latched.
+      svc.writesIgnored = false
+    }
+  }
 }

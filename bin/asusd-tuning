@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""Open or close asusd's power-limit tuning gate for the current profile.
+
+asusd keeps one tuning group per (power source, platform profile) and applies
+PPT/TGP writes only when that specific group carries `enabled: true`. With the
+gate shut it still accepts the D-Bus write, still reports success, and never
+touches the firmware — verified on a GA403WM, where the same write landed under
+AC+Quiet and was silently dropped under AC+Performance.
+
+That gate is why the limits are read-only, and it is per-cell: a stock config
+ships every `dc_profile_tunings` group disabled, so on battery nothing is
+tunable at all — which is precisely where lowering TGP would buy runtime.
+
+  status   print the gate for the current source+profile as JSON (no root)
+  enable   open the gate for the current source+profile (root)
+  disable  close it again (root)
+
+`enable` seeds the group from the values the firmware is running *right now*,
+so opening the gate changes nothing by itself. That matters: the Performance
+group as shipped here carries PptPl1Spl 65, well under the 80 W the machine
+actually runs at, so enabling it as-written would quietly cost 15 W of CPU
+power the moment it was switched on.
+"""
+
+import glob
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+CONF = os.environ.get("ASUSD_CONF", "/etc/asusd/asusd.ron")
+
+# The attributes worth carrying in a tuning group. Restricted deliberately:
+# asus-armoury also exposes non-power attributes (boot_sound, panel_overdrive,
+# gpu_mux_mode) that have no business in a power envelope.
+POWER_ATTRS = [
+    "ppt_pl1_spl", "ppt_pl2_sppt", "ppt_pl3_fppt",
+    "nv_tgp", "nv_dynamic_boost", "nv_temp_target",
+]
+
+# Fallback only. The live mapping is read from asusd itself, which is
+# authoritative and survives upstream renaming a key.
+FALLBACK_KEYS = {
+    "ppt_pl1_spl": "PptPl1Spl", "ppt_pl2_sppt": "PptPl2Sppt",
+    "ppt_pl3_fppt": "PptPl3Fppt", "nv_tgp": "DgpuTgp",
+    "nv_dynamic_boost": "NvDynamicBoost", "nv_temp_target": "NvTempTarget",
+}
+
+SYSFS = "/sys/class/firmware-attributes/asus-armoury/attributes"
+
+
+# ---- reading the machine ------------------------------------------------
+
+def on_ac():
+    for t in glob.glob("/sys/class/power_supply/*/type"):
+        try:
+            if open(t).read().strip() != "Mains":
+                continue
+            if open(os.path.join(os.path.dirname(t), "online")).read().strip() == "1":
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def current_profile():
+    try:
+        return open("/sys/firmware/acpi/platform_profile").read().strip()
+    except OSError:
+        return ""
+
+
+def ron_key(attr):
+    """asusd's config key for a sysfs attribute, asked of asusd itself."""
+    try:
+        out = subprocess.run(
+            ["busctl", "--system", "--json=short", "get-property", "xyz.ljones.Asusd",
+             "/xyz/ljones/asus_armoury/" + attr, "xyz.ljones.AsusArmoury", "Name"],
+            capture_output=True, text=True, timeout=5)
+        if out.returncode == 0:
+            return json.loads(out.stdout)["data"]
+    except Exception:
+        pass
+    return FALLBACK_KEYS.get(attr)
+
+
+def _attr_int(attr, field):
+    try:
+        return int(open(os.path.join(SYSFS, attr, field)).read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def live_values():
+    """{RonKey: int} for every power attribute currently in a usable range.
+
+    Attributes outside their own min/max are skipped rather than recorded. On a
+    parked discrete GPU the nv_* attributes collapse to current=min=max=0, which
+    means "not applicable", not "zero watts" — and asusd, on its next start,
+    tries to apply whatever the group says. Writing 0 there earns an EINVAL from
+    the firmware, and asusd does not merely skip that attribute: the reload error
+    takes down the whole asus_armoury D-Bus export, so every limit disappears.
+    Seeding a value the firmware would reject is therefore a way to break the
+    thing this helper exists to enable.
+    """
+    vals = {}
+    for attr in POWER_ATTRS:
+        cur = _attr_int(attr, "current_value")
+        lo = _attr_int(attr, "min_value")
+        hi = _attr_int(attr, "max_value")
+        if cur is None or lo is None or hi is None:
+            continue
+        if hi <= lo or not (lo <= cur <= hi):
+            continue
+        key = ron_key(attr)
+        if key:
+            vals[key] = cur
+    return vals
+
+
+# ---- reading the config -------------------------------------------------
+#
+# Keyed on indentation rather than brace matching: each profile block contains
+# a nested `group: { ... }` whose closing brace makes a naive brace-counting
+# walk leave the section one line early.
+
+def find_block(lines, section, profile):
+    """(start, end) line indices of the profile's block body, or None.
+
+    `start` is the line after `<Profile>: (`; `end` is the line holding its
+    closing `),`.
+    """
+    sec_indent = None
+    in_sec = False
+    prof_indent = None
+    start = None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip())
+
+        if not in_sec:
+            if re.match(rf"{re.escape(section)}\s*:", stripped):
+                in_sec, sec_indent = True, indent
+            continue
+
+        if start is None:
+            if indent <= sec_indent and not stripped.startswith(("(", "{")):
+                in_sec = False          # section ended without the profile
+                continue
+            if re.match(rf"{re.escape(profile)}\s*:", stripped):
+                prof_indent, start = indent, i + 1
+            continue
+
+        if indent <= prof_indent:
+            return start, i
+    return None
+
+
+def gate_state(lines, section, profile):
+    span = find_block(lines, section, profile)
+    if not span:
+        return None
+    for line in lines[span[0]:span[1]]:
+        m = re.match(r"enabled\s*:\s*(true|false)", line.strip())
+        if m:
+            return m.group(1) == "true"
+    return None
+
+
+# ---- writing the config -------------------------------------------------
+
+def rewrite(lines, section, profile, enabled, values):
+    span = find_block(lines, section, profile)
+    if not span:
+        raise SystemExit(f"no {section}.{profile} block in {CONF}")
+    start, end = span
+
+    body_indent = len(lines[start]) - len(lines[start].lstrip())
+    pad = " " * body_indent
+
+    out = lines[:start]
+    out.append(f"{pad}enabled: {'true' if enabled else 'false'},")
+    if values:
+        out.append(f"{pad}group: {{")
+        for key in sorted(values):
+            out.append(f"{pad}    {key}: {values[key]},")
+        out.append(f"{pad}}},")
+    else:
+        out.append(f"{pad}group: {{}},")
+    out.extend(lines[end:])
+    return out
+
+
+def apply(enabled):
+    if os.geteuid() != 0:
+        raise SystemExit("must run as root (use pkexec)")
+
+    profile = current_profile()
+    if not profile:
+        raise SystemExit("cannot read /sys/firmware/acpi/platform_profile")
+    pretty = profile[:1].upper() + profile[1:]
+    section = "ac_profile_tunings" if on_ac() else "dc_profile_tunings"
+
+    lines = open(CONF).read().splitlines()
+    # Seeding only matters when opening the gate. Closing it leaves the group
+    # alone so the previous envelope is still there if it is reopened.
+    values = live_values() if enabled else None
+    if values is None:
+        span = find_block(lines, section, pretty)
+        values = {}
+        if span:
+            for line in lines[span[0]:span[1]]:
+                m = re.match(r"(\w+)\s*:\s*(\d+),", line.strip())
+                if m and m.group(1) != "enabled":
+                    values[m.group(1)] = int(m.group(2))
+
+    new = rewrite(lines, section, pretty, enabled, values)
+
+    backup = CONF + ".bak-tuning"
+    shutil.copy2(CONF, backup)
+    with open(CONF, "w") as f:
+        f.write("\n".join(new) + "\n")
+
+    # asusd reads this file only at startup. If it will not come back, the
+    # config is the prime suspect, so put the old one back rather than leaving
+    # the machine without its power daemon.
+    # Clear any start-rate limit first. This helper restarts asusd every time it
+    # runs, so a few gate changes in a row are enough to trip StartLimitBurst,
+    # after which systemd refuses the restart and the rollback below would blame
+    # a config that was never the problem.
+    subprocess.run(["systemctl", "reset-failed", "asusd.service"], capture_output=True)
+
+    r = subprocess.run(["systemctl", "restart", "asusd"], capture_output=True, text=True)
+    if r.returncode != 0:
+        shutil.copy2(backup, CONF)
+        subprocess.run(["systemctl", "reset-failed", "asusd.service"], capture_output=True)
+        subprocess.run(["systemctl", "restart", "asusd"], capture_output=True)
+        raise SystemExit(f"asusd refused to restart; config restored\n{r.stderr}")
+
+    # A fresh asusd re-applies its configured default for the current power
+    # source, so the restart above silently moves you off the profile you were
+    # editing — enable while on Balanced and you land on Performance, having
+    # opened a gate for a profile you are no longer using. Put it back.
+    # Settle first. Checking immediately races asusd: the profile still reads
+    # as the old one for a moment after the socket is up, so an early compare
+    # sees no change and skips the restore that is about to become necessary.
+    restored = False
+    for _ in range(24):                      # up to ~6s
+        time.sleep(0.25)
+        if subprocess.run(["systemctl", "is-active", "--quiet", "asusd"]).returncode == 0:
+            break
+    time.sleep(1.5)
+
+    if current_profile() != profile:
+        p = subprocess.run(["asusctl", "profile", "set", pretty],
+                           capture_output=True, text=True)
+        restored = p.returncode == 0
+
+    print(json.dumps({"section": section, "profile": pretty, "enabled": enabled,
+                      "group": values, "profileRestored": restored}))
+
+
+def status():
+    profile = current_profile()
+    pretty = profile[:1].upper() + profile[1:]
+    section = "ac_profile_tunings" if on_ac() else "dc_profile_tunings"
+    try:
+        lines = open(CONF).read().splitlines()
+        state = gate_state(lines, section, pretty)
+    except OSError:
+        state = None
+    print(json.dumps({"onAc": on_ac(), "profile": profile,
+                      "section": section, "enabled": state}))
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    if cmd == "status":
+        status()
+    elif cmd == "enable":
+        apply(True)
+    elif cmd == "disable":
+        apply(False)
+    else:
+        raise SystemExit(__doc__)

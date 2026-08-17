@@ -143,16 +143,45 @@ otherwise they are stored as strings).
 
 ## Notes on the ASUS section
 
-The power limits are only writable if asusd's per-profile *tunings* are enabled in
-`/etc/asusd/asusd.ron` — they ship disabled. The panel tells you when writes are being ignored
-rather than letting a slider spring back unexplained.
+The power limits are writable only when asusd's *tuning* gate is open — and the gate is per
+**(power source × profile)**, not global. asusd keeps a separate power envelope for each of the six
+cells of `ac`/`dc` × Quiet/Balanced/Performance, and consults only the one matching the moment.
+With that cell shut it accepts the D-Bus write, reports success, updates its own property, and
+never touches the firmware.
 
-On **asusd 6.3.8** the limits are effectively read-only regardless: that release has a
-getter/setter bug where property writes are accepted and silently discarded (the same defect that
-breaks `asusctl slash --mode`). It needs ≥ 6.4.0. The **profile buttons work regardless** — they
-apply the tuning groups from `asusd.ron`, which is how to set custom limits on that version.
+Verified on a GA403WM: the identical write landed under AC + Quiet and was silently dropped under
+AC + Performance. So a slider that does nothing is almost never a broken asusd — it is the wrong
+cell being shut.
 
-Two behaviours worth knowing, both asusd's rather than this plugin's:
+A stock `asusd.ron` ships **every `dc_profile_tunings` group disabled**, which means nothing is
+tunable on battery — exactly where lowering TGP would buy runtime.
+
+The panel names the shut cell ("asusd is not applying power limits for Balanced on AC") and, if the
+helper below is installed, offers a padlock button to open it. Opening a gate seeds its group from
+the values the firmware is running *right now*, so it changes nothing by itself — worth doing,
+because asusd's shipped Performance group carries a `PptPl1Spl` well under what the machine
+actually runs at, and enabling it verbatim would quietly cost CPU power.
+
+You can only open the gate for the cell you are currently in: to make the limits tunable on
+battery, unplug first, then click the padlock.
+
+### Installing the tuning helper
+
+Opening the gate rewrites `/etc/asusd/asusd.ron` and restarts asusd, so it needs root. Everything
+else — reading the gate, switching modes, switching profiles — works without it.
+
+```sh
+sudo ./contrib/install.sh
+```
+
+That places `asusd-tuning` in `/usr/local/bin` and a polkit action beside it, so the button prompts
+for your password rather than needing a passwordless sudo rule. `asusd-tuning status` prints the
+current gate as JSON; `disable` closes it again, keeping the group so it survives being reopened.
+
+Restarting asusd makes it re-apply its configured default profile, which would otherwise move you
+off the profile you were editing — the helper detects that and puts your profile back.
+
+Two more behaviours worth knowing, both asusd's rather than this plugin's:
 
 - If asusd is configured to switch profiles on AC/battery, a profile you pick by hand lasts only
   until the next plug or unplug. The panel says so when that is configured.
@@ -165,9 +194,10 @@ Two behaviours worth knowing, both asusd's rather than this plugin's:
 card simply by being run — so a naive monitor causes the very problem it reports. Power state comes
 from cardwire's `PowerState()` D-Bus method, which the daemon answers without touching the device.
 
-**Reads come from sysfs, not asusd's D-Bus properties.** With tunings disabled, asusd's
-`CurrentValue` reports what was *requested*, not what the hardware has — it will happily claim
-70 W while the GPU sits at 85 W. Every attribute is read from
+**Reads come from sysfs, not asusd's D-Bus properties.** With the gate shut, asusd's `CurrentValue`
+reports what was *requested*, not what the hardware has. Measured directly: switching to
+Performance moved D-Bus `PptPl1Spl` to 65 W while sysfs — and the CPU — stayed at 80 W. A panel
+wired to D-Bus would have shown limits that did not exist. Every attribute is read from
 `/sys/class/firmware-attributes/asus-armoury/` via `FileView`: authoritative, natively watched, and
 no subprocess.
 
